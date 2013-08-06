@@ -42,6 +42,7 @@
 #undef REQUIRE_PLUGIN
 #undef REQUIRE_EXTENSIONS
 #include <clientprefs>
+#include <sdkhooks>
 
 /***************************************************************************************
 
@@ -52,9 +53,9 @@
 ***************************************************************************************/
 public Plugin:myinfo = {
 	name 						= "Damage Sound",
-	author 						= "BCServ:Chanz, foo bar",
+	author 						= "BCServ:Chanz, [foo] bar",
 	description 				= "This plugin plays a sound when players hit each other.",
-	version 					= "2.0",
+	version 					= "2.1",
 	url 						= "https://forums.alliedmods.net/showthread.php?t=99552"
 }
 
@@ -83,7 +84,11 @@ const NUM_WEAPONS = 8;
 
 // Console Variables
 new Handle:g_cvarEnable = INVALID_HANDLE;
-new Handle:g_cvarPath = INVALID_HANDLE;
+new Handle:g_cvarPathHigh = INVALID_HANDLE;
+new Handle:g_cvarPathMedium = INVALID_HANDLE;
+new Handle:g_cvarPathLow = INVALID_HANDLE;
+new Handle:g_cvarPathHighThreshold = INVALID_HANDLE;
+new Handle:g_cvarPathLowThreshold = INVALID_HANDLE;
 new Handle:g_cvarDelay = INVALID_HANDLE;
 new Handle:g_cvarActOnWeapons = INVALID_HANDLE;
 new Handle:g_cvarClient_Enable = INVALID_HANDLE;
@@ -93,19 +98,25 @@ new Handle:g_cvarClient_PitchTime = INVALID_HANDLE;
 
 // Console Variables: Runtime Optimizers
 new g_iPlugin_Enable = 1;
-new String:g_szPlugin_Path[PLATFORM_MAX_PATH] = "";
+new String:g_szPlugin_PathHigh[PLATFORM_MAX_PATH] = "";
+new String:g_szPlugin_PathMedium[PLATFORM_MAX_PATH] = "";
+new String:g_szPlugin_PathLow[PLATFORM_MAX_PATH] = "";
 new Float:g_flPlugin_Delay = 0.0;
 new String:g_szPlugin_ActOnWeapons[255] = "";
 new bool:g_bPlugin_Client_Enable = true;
 new Float:g_flPlugin_Client_Volume = 1.0;
 new bool:g_bPlugin_Client_Pitch = true;
 new Float:g_flPlugin_Client_PitchTime = 1.0;
+new Float:g_flPlugin_DamageLowThreshold = 0.0;
+new Float:g_flPlugin_DamageHighThreshold = 1.0;
 
 // Timers
 
 
 // Library Load Checks
 new bool:g_bClientPrefs_Loaded = false;
+new bool:g_bSdkHooks_Loaded = false;
+
 
 // Game Variables
 new bool:g_bConfigsExecuted = false;
@@ -150,7 +161,6 @@ public OnPluginStart()
 	
 	// Command Hooks (AddCommandListener) (If the command already exists, like the command kill, then hook it!)
 	
-	
 	// Register New Commands (PluginManager_RegConsoleCmd) (If the command doesn't exist, hook it above!)
 	PluginManager_RegConsoleCmd("sm_damagesound", Command_DamageSoundMenu, "Shows the damagesound menu");
 	PluginManager_RegConsoleCmd("sm_hitsound", Command_DamageSoundMenu, "Shows the damagesound menu");
@@ -160,7 +170,14 @@ public OnPluginStart()
 
 	// Cvars: Create a global handle variable.
 	g_cvarEnable = PluginManager_CreateConVar("enable", "1", "Enables or disables this plugin");
-	g_cvarPath = PluginManager_CreateConVar("path", "buttons/button10.wav", "Path to damage sound file");
+	g_cvarPathHigh = PluginManager_CreateConVar("path", "buttons/button10.wav", "Path to high damage sound file");		// good hit
+	g_cvarPathMedium = PluginManager_CreateConVar("path_medium", "buttons/button10.wav", "Path to mid-range damage sound file");	//in between
+	g_cvarPathLow = PluginManager_CreateConVar("path_low", "buttons/button10.wav", "Path to low damage sound file");	// bad hit
+
+
+	g_cvarPathHighThreshold = PluginManager_CreateConVar("path_threshold", "80","Damage floor threshold to play high damage sound");
+	g_cvarPathLowThreshold = PluginManager_CreateConVar("path_low_threshold", "30", "Damage ceiling threshold to play low damage sound");
+
 	g_cvarDelay = PluginManager_CreateConVar("delay", "0.0", "How many secounds should the plugin wait to play the sound again (in seconds).");
 	g_cvarActOnWeapons = PluginManager_CreateConVar("actonweapon","","Specifies which weapons damagesounds will play for.  Default is all");
 	g_cvarClient_Enable = PluginManager_CreateConVar("client_enable", "1", "Should the client have had DamageSound enabled by default? (1=yes/0=no)");
@@ -168,9 +185,14 @@ public OnPluginStart()
 	g_cvarClient_Pitch = PluginManager_CreateConVar("client_pitch", "0", "Should the sound for the client pitch up with every hit by default? (1=on/0=off) (Dystopia Effect)");
 	g_cvarClient_PitchTime = PluginManager_CreateConVar("client_pitch_time", "2.0", "Sets the client default setting: If the attacker did not hit his victim, after X seconds the pitch resets to normal (0=it pitches up until the victim dies)");
 	
+	AutoExecConfig();
+
 	// Hook ConVar Change
 	HookConVarChange(g_cvarEnable, ConVarChange_Enable);
-	HookConVarChange(g_cvarPath, ConVarChange_Path);
+	HookConVarChange(g_cvarPathHigh, ConVarChange_Path);
+	HookConVarChange(g_cvarPathMedium, ConVarChange_PathMedium);
+	HookConVarChange(g_cvarPathLow, ConVarChange_PathLow);
+	
 	HookConVarChange(g_cvarDelay, ConVarChange_Delay);
 	HookConVarChange(g_cvarActOnWeapons, ConVarChange_ActOnWeapons);
 	HookConVarChange(g_cvarClient_Enable, ConVarChange_Client_Enable);
@@ -178,9 +200,11 @@ public OnPluginStart()
 	HookConVarChange(g_cvarClient_Pitch, ConVarChange_Client_Pitch);
 	HookConVarChange(g_cvarClient_PitchTime, ConVarChange_Client_PitchTime);
 	
+
+
 	// Event Hooks
-	PluginManager_HookEvent("player_hurt", Event_Hurt);
-	PluginManager_HookEvent("player_death", Event_Death);
+
+	
 	
 	// Library
 	g_bClientPrefs_Loaded = (GetExtensionFileStatus("clientprefs.ext") == 1);
@@ -198,6 +222,7 @@ public OnPluginStart()
 		g_cookiePitchTime = RegClientCookie("DmgSndConf-PitchTime", "DamageSound PitchTime cookie", CookieAccess_Private);
 	}
 	
+	g_bSdkHooks_Loaded = (GetExtensionFileStatus("sdkhooks.ext") == 1);
 	/* Features
 	if(CanTestFeatures()){
 		
@@ -222,10 +247,19 @@ public OnMapStart()
 	if (g_bConfigsExecuted) {
 
 		decl String:soundpathMainDir[PLATFORM_MAX_PATH];
-		Format(soundpathMainDir,sizeof(soundpathMainDir),"sound/%s",g_szPlugin_Path);
+
+		Format(soundpathMainDir,sizeof(soundpathMainDir),"sound/%s",g_szPlugin_PathHigh);
 		File_AddToDownloadsTable(soundpathMainDir);
-		
-		PrecacheSound(g_szPlugin_Path);
+		PrecacheSound(g_szPlugin_PathHigh);
+
+		Format(soundpathMainDir,sizeof(soundpathMainDir),"sound/%s",g_szPlugin_PathMedium);
+		File_AddToDownloadsTable(soundpathMainDir);
+		PrecacheSound(g_szPlugin_PathMedium);
+
+		Format(soundpathMainDir,sizeof(soundpathMainDir),"sound/%s",g_szPlugin_PathLow);
+		File_AddToDownloadsTable(soundpathMainDir);
+		PrecacheSound(g_szPlugin_PathLow);
+	
 	}
 
 	g_bMap_Loaded = true;
@@ -239,7 +273,14 @@ public OnConfigsExecuted()
 {
 	// Set your ConVar runtime optimizers here
 	g_iPlugin_Enable = GetConVarInt(g_cvarEnable);
-	GetConVarString(g_cvarPath, g_szPlugin_Path, sizeof(g_szPlugin_Path));
+	GetConVarString(g_cvarPathHigh, g_szPlugin_PathHigh, sizeof(g_szPlugin_PathHigh));
+	GetConVarString(g_cvarPathMedium, g_szPlugin_PathMedium, sizeof(g_szPlugin_PathMedium));
+	GetConVarString(g_cvarPathLow, g_szPlugin_PathLow, sizeof(g_szPlugin_PathLow));
+
+	g_flPlugin_DamageLowThreshold = GetConVarFloat(g_cvarPathLowThreshold);
+	g_flPlugin_DamageHighThreshold = GetConVarFloat(g_cvarPathHighThreshold);
+
+	
 	g_flPlugin_Delay = GetConVarFloat(g_cvarDelay);
 	GetConVarString(g_cvarActOnWeapons, g_szPlugin_ActOnWeapons, sizeof(g_szPlugin_ActOnWeapons));
 	g_bPlugin_Client_Enable = GetConVarBool(g_cvarClient_Enable);
@@ -251,32 +292,46 @@ public OnConfigsExecuted()
 	// Remove it if you don't need it.
 	Client_InitializeAll();
 
-	new validSoundFile = IsSoundFileValid(g_szPlugin_Path);
+	new validSoundFile = IsSoundFileValid(g_szPlugin_PathHigh);
 	if (validSoundFile == 1 && g_bMap_Loaded) {
 
 		decl String:soundpathMainDir[PLATFORM_MAX_PATH];
-		Format(soundpathMainDir,sizeof(soundpathMainDir),"sound/%s",g_szPlugin_Path);
+		Format(soundpathMainDir,sizeof(soundpathMainDir),"sound/%s",g_szPlugin_PathHigh);
 		File_AddToDownloadsTable(soundpathMainDir);
-		PrecacheSound(g_szPlugin_Path);
+		PrecacheSound(g_szPlugin_PathHigh);
+
+		Format(soundpathMainDir,sizeof(soundpathMainDir),"sound/%s",g_szPlugin_PathMedium);
+		File_AddToDownloadsTable(soundpathMainDir);
+		PrecacheSound(g_szPlugin_PathMedium);
+
+		Format(soundpathMainDir,sizeof(soundpathMainDir),"sound/%s",g_szPlugin_PathLow);
+		File_AddToDownloadsTable(soundpathMainDir);
+		PrecacheSound(g_szPlugin_PathLow);
 	}
 	else if(validSoundFile == 0){
 
 		decl String:cvarName[MAX_NAME_LENGTH];
-		GetConVarName(g_cvarPath, cvarName, sizeof(cvarName));
-		LogError("cvar %s is wrong, because %s is not a valid path", cvarName, g_szPlugin_Path);
-		g_szPlugin_Path[0] = '\0';
+		GetConVarName(g_cvarPathHigh, cvarName, sizeof(cvarName));
+		LogError("cvar %s is wrong, because %s is not a valid path", cvarName, g_szPlugin_PathHigh);
+		g_szPlugin_PathHigh[0] = '\0';
 	}
 	else if(validSoundFile == -1){
 
 		decl String:cvarName[MAX_NAME_LENGTH];
-		GetConVarName(g_cvarPath, cvarName, sizeof(cvarName));
-		LogError("cvar %s is wrong, because the file %s does not exist", cvarName, g_szPlugin_Path);
-		g_szPlugin_Path[0] = '\0';
+		GetConVarName(g_cvarPathHigh, cvarName, sizeof(cvarName));
+		LogError("cvar %s is wrong, because the file %s does not exist", cvarName, g_szPlugin_PathHigh);
+		g_szPlugin_PathHigh[0] = '\0';
 	}
 
 	if(g_szPlugin_ActOnWeapons[0] != '\0'){
 		ExplodeString(g_szPlugin_ActOnWeapons, " ", g_szActOnWeapons, sizeof(g_szActOnWeapons), sizeof(g_szActOnWeapons[]));
 	}
+
+	if(g_bSdkHooks_Loaded==false){
+		PluginManager_HookEvent("player_hurt", Event_Hurt);
+		PrintToServer("Using player hurt");
+	}
+	PluginManager_HookEvent("player_death", Event_Death);
 
 	g_bConfigsExecuted = true;
 }
@@ -318,14 +373,41 @@ public ConVarChange_Path(Handle:cvar, const String:oldVal[], const String:newVal
 {
 	if(IsSoundFileValid(newVal) == 1){
 		
-		strcopy(g_szPlugin_Path,sizeof(g_szPlugin_Path),newVal);
+		strcopy(g_szPlugin_PathHigh,sizeof(g_szPlugin_PathHigh),newVal);
 		
 		decl String:soundpathMainDir[PLATFORM_MAX_PATH];
-		Format(soundpathMainDir,sizeof(soundpathMainDir),"sound/%s",g_szPlugin_Path);
+		Format(soundpathMainDir,sizeof(soundpathMainDir),"sound/%s",g_szPlugin_PathHigh);
 		File_AddToDownloadsTable(soundpathMainDir);
-		PrecacheSound(g_szPlugin_Path);
+		PrecacheSound(g_szPlugin_PathHigh);
 	}
 }
+
+public ConVarChange_PathMedium(Handle:cvar, const String:oldVal[], const String:newVal[])
+{
+	if(IsSoundFileValid(newVal) == 1){
+		
+		strcopy(g_szPlugin_PathMedium,sizeof(g_szPlugin_PathMedium),newVal);
+		
+		decl String:soundpathMainDir[PLATFORM_MAX_PATH];
+		Format(soundpathMainDir,sizeof(soundpathMainDir),"sound/%s",g_szPlugin_PathMedium);
+		File_AddToDownloadsTable(soundpathMainDir);
+		PrecacheSound(g_szPlugin_PathMedium);
+	}
+}
+
+public ConVarChange_PathLow(Handle:cvar, const String:oldVal[], const String:newVal[])
+{
+	if(IsSoundFileValid(newVal) == 1){
+		
+		strcopy(g_szPlugin_PathLow,sizeof(g_szPlugin_PathLow),newVal);
+		
+		decl String:soundpathMainDir[PLATFORM_MAX_PATH];
+		Format(soundpathMainDir,sizeof(soundpathMainDir),"sound/%s",g_szPlugin_PathLow);
+		File_AddToDownloadsTable(soundpathMainDir);
+		PrecacheSound(g_szPlugin_PathLow);
+	}
+}
+
 
 public ConVarChange_Delay(Handle:cvar, const String:oldVal[], const String:newVal[])
 {
@@ -559,6 +641,28 @@ public Action:Event_Hurt(Handle:event, const String:name[], bool:dontBroadcast)
 	}
 
 	new client = GetClientOfUserId(GetEventInt(event, "userid"));
+	
+	ProcessSound(client, attacker);
+
+	return Plugin_Continue;
+}
+
+public Action:OnTakeDamage(victim, &attacker, &inflictor, &Float:damage, &damagetype)
+{
+	ProcessSound(victim, attacker, damage);
+}
+
+/***************************************************************************************
+
+
+	P L U G I N   F U N C T I O N S
+
+
+***************************************************************************************/
+
+ProcessSound(client, attacker, Float:damage=0)
+{
+	PrintToServer("damagesound: client=%d, attacker=%d damage=%f", client, attacker, damage);
 	if(Client_IsValid(client) && Client_IsValid(attacker) && (client != attacker)){
 		
 		decl String:weapon[32];
@@ -590,25 +694,27 @@ public Action:Event_Hurt(Handle:event, const String:name[], bool:dontBroadcast)
 			calcPitch = 255;
 		}
 
-		EmitSoundToClient(attacker, g_szPlugin_Path, SOUND_FROM_PLAYER, SNDCHAN_AUTO, SNDLEVEL_RAIDSIREN, SND_NOFLAGS, g_flClient_Volume[attacker] / 100.0, calcPitch);
-		EmitSoundToClient(attacker, g_szPlugin_Path, SOUND_FROM_PLAYER, SNDCHAN_AUTO, SNDLEVEL_RAIDSIREN, SND_NOFLAGS, g_flClient_Volume[attacker], calcPitch);
-		EmitSoundToClient(attacker, g_szPlugin_Path, SOUND_FROM_PLAYER, SNDCHAN_AUTO, SNDLEVEL_RAIDSIREN, SND_NOFLAGS, g_flClient_Volume[attacker], calcPitch);
+
+		if(damage < g_flPlugin_DamageLowThreshold ) { 
+			EmitSoundToClient(attacker, g_szPlugin_PathLow, SOUND_FROM_PLAYER, SNDCHAN_AUTO, SNDLEVEL_RAIDSIREN, SND_NOFLAGS, g_flClient_Volume[attacker]  , calcPitch);
+		} else if(damage >= g_flPlugin_DamageLowThreshold && damage < g_flPlugin_DamageHighThreshold) { 
+			EmitSoundToClient(attacker, g_szPlugin_PathMedium, SOUND_FROM_PLAYER, SNDCHAN_AUTO, SNDLEVEL_RAIDSIREN, SND_NOFLAGS, g_flClient_Volume[attacker] , calcPitch);	
+		} else {
+			EmitSoundToClient(attacker, g_szPlugin_PathHigh, SOUND_FROM_PLAYER, SNDCHAN_AUTO, SNDLEVEL_RAIDSIREN, SND_NOFLAGS, g_flClient_Volume[attacker]  , calcPitch);
+		} 
+		
+
+// ???
+//		EmitSoundToClient(attacker, g_szPlugin_Path, SOUND_FROM_PLAYER, SNDCHAN_AUTO, SNDLEVEL_RAIDSIREN, SND_NOFLAGS, g_flClient_Volume[attacker], calcPitch);
+//		EmitSoundToClient(attacker, g_szPlugin_Path, SOUND_FROM_PLAYER, SNDCHAN_AUTO, SNDLEVEL_RAIDSIREN, SND_NOFLAGS, g_flClient_Volume[attacker], calcPitch);
 		
 		if(g_bClient_Pitch[attacker]){
 			g_iClient_HitCounter[attacker][client]++;
 		}
-	}
-
-	return Plugin_Continue;
+	}	
+	return(true);
 }
 
-/***************************************************************************************
-
-
-	P L U G I N   F U N C T I O N S
-
-
-***************************************************************************************/
 bool:IsWeaponSoundable(String:weapon[])
 {
 	new i=0;
@@ -740,6 +846,11 @@ stock Client_Initialize(client)
 	else{
 		
 		LoaddClientPrefs_WithoutCookies(client);
+	}
+
+	if(g_bSdkHooks_Loaded) {
+		PrintToServer("Hook %d", client);
+		SDKHook(client, SDKHook_OnTakeDamage, OnTakeDamage);
 	}
 }
 
