@@ -55,7 +55,7 @@ public Plugin:myinfo = {
 	name 						= "Damage Sound",
 	author 						= "BCServ:Chanz, [foo] bar",
 	description 				= "This plugin plays a sound when players hit each other.",
-	version 					= "2.1",
+	version 					= "2.2",
 	url 						= "https://forums.alliedmods.net/showthread.php?t=99552"
 }
 
