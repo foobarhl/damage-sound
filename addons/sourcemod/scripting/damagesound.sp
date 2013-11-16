@@ -299,6 +299,7 @@ public OnConfigsExecuted()
 		Format(soundpathMainDir,sizeof(soundpathMainDir),"sound/%s",g_szPlugin_PathHigh);
 		File_AddToDownloadsTable(soundpathMainDir);
 		PrecacheSound(g_szPlugin_PathHigh);
+
 		Format(soundpathMainDir,sizeof(soundpathMainDir),"sound/%s",g_szPlugin_PathMedium);
 		File_AddToDownloadsTable(soundpathMainDir);
 		PrecacheSound(g_szPlugin_PathMedium);
@@ -692,15 +693,16 @@ ProcessSound(client, attacker, Float:damage=0.0)
 			calcPitch = 255;
 		}
 
+		// Use EmitSound instead of EmitSoundToClient because EmitSoundToClient and CS:S don't work together
 		new target[1];
-		target[0]  =  attacker ;
+		target[0] = attacker ;
 
 		if(damage < g_flPlugin_DamageLowThreshold ) { 
-			EmitSound(target, 1, g_szPlugin_PathLow);//, SOUND_FROM_PLAYER, SNDCHAN_AUTO, SNDLEVEL_RAIDSIREN, SND_NOFLAGS, g_flClient_Volume[attacker]  , calcPitch);
+			EmitSound(target, 1, g_szPlugin_PathLow, SOUND_FROM_PLAYER, SNDCHAN_AUTO, SNDLEVEL_RAIDSIREN, SND_NOFLAGS, g_flClient_Volume[attacker]  , calcPitch);
 		} else if(damage >= g_flPlugin_DamageLowThreshold && damage < g_flPlugin_DamageHighThreshold) { 
-			EmitSound(target, 1, g_szPlugin_PathMedium);//, SOUND_FROM_PLAYER, SNDCHAN_AUTO, SNDLEVEL_RAIDSIREN, SND_NOFLAGS, g_flClient_Volume[attacker] , calcPitch);	
+			EmitSound(target, 1, g_szPlugin_PathMedium, SOUND_FROM_PLAYER, SNDCHAN_AUTO, SNDLEVEL_RAIDSIREN, SND_NOFLAGS, g_flClient_Volume[attacker] , calcPitch);	
 		} else {
-			EmitSound(target, 1, g_szPlugin_PathHigh);//, SOUND_FROM_PLAYER, SNDCHAN_AUTO, SNDLEVEL_RAIDSIREN, SND_NOFLAGS, g_flClient_Volume[attacker]  , calcPitch);
+			EmitSound(target, 1, g_szPlugin_PathHigh, SOUND_FROM_PLAYER, SNDCHAN_AUTO, SNDLEVEL_RAIDSIREN, SND_NOFLAGS, g_flClient_Volume[attacker]  , calcPitch);
 		} 
 		
 
