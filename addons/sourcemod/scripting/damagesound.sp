@@ -299,7 +299,6 @@ public OnConfigsExecuted()
 		Format(soundpathMainDir,sizeof(soundpathMainDir),"sound/%s",g_szPlugin_PathHigh);
 		File_AddToDownloadsTable(soundpathMainDir);
 		PrecacheSound(g_szPlugin_PathHigh);
-
 		Format(soundpathMainDir,sizeof(soundpathMainDir),"sound/%s",g_szPlugin_PathMedium);
 		File_AddToDownloadsTable(soundpathMainDir);
 		PrecacheSound(g_szPlugin_PathMedium);
@@ -660,15 +659,14 @@ public Action:OnTakeDamage(victim, &attacker, &inflictor, &Float:damage, &damage
 
 ***************************************************************************************/
 
-ProcessSound(client, attacker, Float:damage=0)
+ProcessSound(client, attacker, Float:damage=0.0)
 {
-	PrintToServer("damagesound: client=%d, attacker=%d damage=%f", client, attacker, damage);
 	if(Client_IsValid(client) && Client_IsValid(attacker) && (client != attacker)){
 		
 		decl String:weapon[32];
 		Client_GetActiveWeaponName(attacker, weapon, sizeof(weapon));
 		if(!IsWeaponSoundable(weapon)){
-			return Plugin_Continue;
+			return false;
 		}
 
 		new Float:theTime = GetGameTime();
@@ -683,7 +681,7 @@ ProcessSound(client, attacker, Float:damage=0)
 		if (g_flPlugin_Delay > 0.0) {
 
 			if(theTime - g_flPlugin_Delay <= g_flClient_LastHit[attacker][client]){
-				return Plugin_Continue;
+				return false;
 			}
 		}
 		
@@ -694,13 +692,15 @@ ProcessSound(client, attacker, Float:damage=0)
 			calcPitch = 255;
 		}
 
+		new target[1];
+		target[0]  =  attacker ;
 
 		if(damage < g_flPlugin_DamageLowThreshold ) { 
-			EmitSoundToClient(attacker, g_szPlugin_PathLow, SOUND_FROM_PLAYER, SNDCHAN_AUTO, SNDLEVEL_RAIDSIREN, SND_NOFLAGS, g_flClient_Volume[attacker]  , calcPitch);
+			EmitSound(target, 1, g_szPlugin_PathLow);//, SOUND_FROM_PLAYER, SNDCHAN_AUTO, SNDLEVEL_RAIDSIREN, SND_NOFLAGS, g_flClient_Volume[attacker]  , calcPitch);
 		} else if(damage >= g_flPlugin_DamageLowThreshold && damage < g_flPlugin_DamageHighThreshold) { 
-			EmitSoundToClient(attacker, g_szPlugin_PathMedium, SOUND_FROM_PLAYER, SNDCHAN_AUTO, SNDLEVEL_RAIDSIREN, SND_NOFLAGS, g_flClient_Volume[attacker] , calcPitch);	
+			EmitSound(target, 1, g_szPlugin_PathMedium);//, SOUND_FROM_PLAYER, SNDCHAN_AUTO, SNDLEVEL_RAIDSIREN, SND_NOFLAGS, g_flClient_Volume[attacker] , calcPitch);	
 		} else {
-			EmitSoundToClient(attacker, g_szPlugin_PathHigh, SOUND_FROM_PLAYER, SNDCHAN_AUTO, SNDLEVEL_RAIDSIREN, SND_NOFLAGS, g_flClient_Volume[attacker]  , calcPitch);
+			EmitSound(target, 1, g_szPlugin_PathHigh);//, SOUND_FROM_PLAYER, SNDCHAN_AUTO, SNDLEVEL_RAIDSIREN, SND_NOFLAGS, g_flClient_Volume[attacker]  , calcPitch);
 		} 
 		
 
@@ -711,7 +711,7 @@ ProcessSound(client, attacker, Float:damage=0)
 		if(g_bClient_Pitch[attacker]){
 			g_iClient_HitCounter[attacker][client]++;
 		}
-	}	
+	}
 	return(true);
 }
 
@@ -849,7 +849,6 @@ stock Client_Initialize(client)
 	}
 
 	if(g_bSdkHooks_Loaded) {
-		PrintToServer("Hook %d", client);
 		SDKHook(client, SDKHook_OnTakeDamage, OnTakeDamage);
 	}
 }
